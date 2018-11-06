@@ -72,7 +72,7 @@ def patch(modules_to_patch, raise_errors=True):
         _patch_module(m, raise_errors)
 
     for m in external_modules:
-        _external_recursive_patch(m)
+        _external_module_patch(m)
 
 
 def _patch_module(module_to_patch, raise_errors=True):
@@ -109,10 +109,15 @@ def _xray_traced(wrapped, instance, args, kwargs):
 class XRayPatcherVisitor(ast.NodeVisitor):
     def __init__(self, module):
         self.module = module
-        self._current_class = None
+        self._current_classes = []
+        self._patched_in_class = []
 
     def visit_FunctionDef(self, node):
-        name = '{}.{}'.format(self._current_class, node.name) if self._current_class else node.name
+        name = '.'.join(self._current_classes + [node.name])
+        if self._patched_in_class:
+            if name in self._patched_in_class[-1]:
+                return
+            self._patched_in_class[-1].add(name)
         try:
             wrapt.wrap_function_wrapper(
                 self.module,
@@ -120,12 +125,16 @@ class XRayPatcherVisitor(ast.NodeVisitor):
                 _xray_traced
             )
         except Exception:
-            log.warning('Could not patch %s in %s', name, self.module)
+            log.warning('could not patch %s in %s', name, self.module)
 
     def visit_ClassDef(self, node):
-        self._current_class = node.name
+        self._current_classes.append(node.name)
+        self._patched_in_class.append(set())
+
         self.generic_visit(node)
-        self._current_class = None
+
+        self._patched_in_class.pop()
+        self._current_classes.pop()
 
 
 def _patch_file(module, f):
@@ -138,21 +147,24 @@ def _patch_file(module, f):
     XRayPatcherVisitor(module).visit(tree)
 
 
-def _on_import_factory(module, module_path):
+def _on_file_import_factory(module, module_path):
     def on_import(hook):
         _patch_file(module, '{}.py'.format(module_path))
     return on_import
 
 
-def _external_recursive_patch(module):
+def _external_module_patch(module):
+    if module.startswith('.'):
+        raise Exception('relative packages not supported for patching: {}'.format(module))
+
     module_path = module.replace('.', '/')
     for loader, submodule_name, is_module in pkgutil.iter_modules([module_path]):
         submodule = '.'.join([module, submodule_name])
         if is_module:
-            _external_recursive_patch(submodule)
+            _external_module_patch(submodule)
         else:
             submodule_path = '/'.join([module_path, submodule_name])
-            on_import = _on_import_factory(submodule, submodule_path)
+            on_import = _on_file_import_factory(submodule, submodule_path)
 
             if submodule in sys.modules:
                 on_import(None)
@@ -162,11 +174,11 @@ def _external_recursive_patch(module):
             _PATCHED_MODULES.add(submodule)
             log.info('successfully patched module %s', submodule)
 
-    init = '{}/__init__.py'.format(module_path)
+    on_import = _on_file_import_factory(module, '{}/__init__'.format(module_path))
     if module in sys.modules:
-        _patch_file(module, init)
+        on_import(None)
     else:
-        wrapt.importer.when_imported(module)(_on_import_factory(module, init))
+        wrapt.importer.when_imported(module)(on_import)
 
     _PATCHED_MODULES.add(module)
     log.info('successfully patched module %s', module)
