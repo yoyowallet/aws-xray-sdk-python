@@ -1,9 +1,9 @@
 import importlib
+import inspect
 import logging
 import pkgutil
 import sys
-import types
-from wrapt.importer import when_imported
+import wrapt
 
 log = logging.getLogger(__name__)
 
@@ -99,15 +99,30 @@ def _patch(module_to_patch):
     log.info('successfully patched module %s', module_to_patch)
 
 
-def _on_import(obj):
+def _patch_func(parent, func_name, func):
     from aws_xray_sdk.core import xray_recorder
 
-    for attr in obj.__dict__:
-        obj = getattr(obj, attr, None)
-        if isinstance(obj, types.FunctionType):
-            setattr(obj, attr, xray_recorder.capture()(obj))
-        elif isinstance(obj, types.ClassType):
-            _on_import(obj)
+    setattr(parent, func_name, xray_recorder.capture()(func))
+
+
+def _patch_class(module, cls):
+    for member_name, member in inspect.getmembers(cls, inspect.isclass):
+        if member.__module__ == module.__name__:
+            _patch_class(module, member)
+
+    for member_name, member in inspect.getmembers(cls, inspect.ismethod):
+        if member.__module__ == module.__name__:
+            _patch_func(cls, member_name, member)
+
+
+def _on_import(module):
+    for member_name, member in inspect.getmembers(module, inspect.isfunction):
+        if member.__module__ == module.__name__:
+            _patch_func(module, member_name, member)
+
+    for member_name, member in inspect.getmembers(module, inspect.isclass):
+        if member.__module__ == module.__name__:
+            _patch_class(module, member)
 
 
 def _external_module_patch(module):
@@ -122,7 +137,7 @@ def _external_module_patch(module):
             if submodule in sys.modules:
                 _on_import(sys.modules[submodule])
             else:
-                when_imported(submodule)(_on_import)
+                wrapt.importer.when_imported(submodule)(_on_import)
 
             _PATCHED_MODULES.add(submodule)
             log.info('successfully patched module %s', submodule)
@@ -130,7 +145,7 @@ def _external_module_patch(module):
     if module in sys.modules:
         _on_import(sys.modules[module])
     else:
-        when_imported(module)(_on_import)
+        wrapt.importer.when_imported(module)(_on_import)
 
     _PATCHED_MODULES.add(module)
     log.info('successfully patched module %s', module)
