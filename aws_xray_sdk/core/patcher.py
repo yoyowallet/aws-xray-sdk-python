@@ -113,11 +113,14 @@ class XRayPatcherVisitor(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node):
         name = '{}.{}'.format(self._current_class, node.name) if self._current_class else node.name
-        wrapt.wrap_function_wrapper(
-            self.module,
-            name,
-            _xray_traced
-        )
+        try:
+            wrapt.wrap_function_wrapper(
+                self.module,
+                name,
+                _xray_traced
+            )
+        except Exception:
+            log.warning('Could not patch %s in %s', name, self.module)
 
     def visit_ClassDef(self, node):
         self._current_class = node.name
