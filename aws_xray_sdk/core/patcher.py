@@ -2,6 +2,7 @@ import ast
 import importlib
 import logging
 import pkgutil
+import sys
 import wrapt
 
 log = logging.getLogger(__name__)
@@ -133,18 +134,27 @@ def _patch_file(module, f):
         tree = ast.parse(open_file.read())
     XRayPatcherVisitor(module).visit(tree)
 
-    _PATCHED_MODULES.add(module)
-    log.info('successfully patched module %s', module)
+
+def _on_import_factory(module, module_path):
+    def inner(hook):
+        _patch_file(module, '{}.py'.format(module_path))
+    return inner
 
 
 def _external_recursive_patch(module):
     parent_loader = pkgutil.get_loader(module)
     _patch_file(module, parent_loader.get_filename())  # Patch the __init__ file
 
-    for loader, submodule, is_module in pkgutil.iter_modules([parent_loader.filename]):
-        submod = '.'.join([module, submodule])
+    for loader, submodule_name, is_module in pkgutil.iter_modules([parent_loader.filename]):
+        submodule = '.'.join([module, submodule_name])
         if is_module:
-            _external_recursive_patch(submod)
+            _external_recursive_patch(submodule)
         else:
-            submodule_path = '/'.join([loader.path, submodule])
-            _patch_file(submod, '{}.py'.format(submodule_path))
+            submodule_path = '/'.join([loader.path, submodule_name])
+            if submodule in sys.modules:
+                _patch_file(submodule, '{}.py'.format(submodule_path))
+            else:
+                wrapt.importer.when_imported(submodule)(_on_import_factory(submodule, submodule_path))
+
+            _PATCHED_MODULES.add(module)
+            log.info('successfully patched module %s', module)
