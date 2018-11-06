@@ -137,20 +137,14 @@ def _patch_file(module, f):
     log.info('successfully patched module %s', module)
 
 
-def _external_recursive_patch(module, module_path=None):
-    if not module_path:
-        module_path = module.replace('.', '/')
+def _external_recursive_patch(module):
+    parent_loader = pkgutil.get_loader(module)
+    _patch_file(module, parent_loader.get_filename())  # Patch the __init__ file
 
-    latest_loader = None
-    for loader, submodule, is_module in pkgutil.iter_modules([pkgutil.get_loader(module_path)]):
-        latest_loader = loader
-
-        submod = '.'.join([loader.path, submodule])
-        submodule_path = '/'.join([loader.path, submodule])
+    for loader, submodule, is_module in pkgutil.iter_modules([parent_loader.filename]):
+        submod = '.'.join([module, submodule])
         if is_module:
-            _external_recursive_patch(submod, submodule_path)
+            _external_recursive_patch(submod)
         else:
+            submodule_path = '/'.join([loader.path, submodule])
             _patch_file(submod, '{}.py'.format(submodule_path))
-
-    if latest_loader:
-        _patch_file(module, '{}/__init__.py'.format(latest_loader.path))
