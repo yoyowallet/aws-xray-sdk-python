@@ -136,25 +136,34 @@ def _patch_file(module, f):
 
 
 def _on_import_factory(module, module_path):
-    def inner(hook):
+    def on_import(hook):
         _patch_file(module, '{}.py'.format(module_path))
-    return inner
+    return on_import
 
 
 def _external_recursive_patch(module):
-    parent_loader = pkgutil.get_loader(module)
-    _patch_file(module, parent_loader.get_filename())  # Patch the __init__ file
-
-    for loader, submodule_name, is_module in pkgutil.iter_modules([parent_loader.filename]):
+    module_path = module.replace('.', '/')
+    for loader, submodule_name, is_module in pkgutil.iter_modules([module_path]):
         submodule = '.'.join([module, submodule_name])
         if is_module:
             _external_recursive_patch(submodule)
         else:
-            submodule_path = '/'.join([loader.path, submodule_name])
-            if submodule in sys.modules:
-                _patch_file(submodule, '{}.py'.format(submodule_path))
-            else:
-                wrapt.importer.when_imported(submodule)(_on_import_factory(submodule, submodule_path))
+            submodule_path = '/'.join([module_path, submodule_name])
+            on_import = _on_import_factory(submodule, submodule_path)
 
-            _PATCHED_MODULES.add(module)
-            log.info('successfully patched module %s', module)
+            if submodule in sys.modules:
+                on_import(None)
+            else:
+                wrapt.importer.when_imported(submodule)(on_import)
+
+            _PATCHED_MODULES.add(submodule)
+            log.info('successfully patched module %s', submodule)
+
+    init = '{}/__init__.py'.format(module_path)
+    if module in sys.modules:
+        _patch_file(module, init)
+    else:
+        wrapt.importer.when_imported(module)(_on_import_factory(module, init))
+
+    _PATCHED_MODULES.add(module)
+    log.info('successfully patched module %s', module)
