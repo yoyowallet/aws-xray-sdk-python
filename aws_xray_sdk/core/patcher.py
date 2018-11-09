@@ -73,7 +73,7 @@ def patch(modules_to_patch, raise_errors=True, ignore_module_patterns=None):
     for m in native_modules:
         _patch_module(m, raise_errors)
 
-    ignore_module_patterns = [re.compile(pattern) for pattern in ignore_module_patterns]
+    ignore_module_patterns = [re.compile(pattern) for pattern in ignore_module_patterns or []]
     for m in external_modules:
         _external_module_patch(m, ignore_module_patterns)
 
