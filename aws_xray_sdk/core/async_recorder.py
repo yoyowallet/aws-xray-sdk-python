@@ -2,7 +2,7 @@ import time
 
 from aws_xray_sdk.core.recorder import AWSXRayRecorder
 from aws_xray_sdk.core.utils import stacktrace
-from aws_xray_sdk.core.models.subsegment import SubsegmentContextManager, is_already_patched, subsegment_decorator
+from aws_xray_sdk.core.models.subsegment import SubsegmentContextManager, is_already_recorded, subsegment_decorator
 from aws_xray_sdk.core.models.segment import SegmentContextManager
 
 
@@ -17,7 +17,7 @@ class AsyncSubsegmentContextManager(SubsegmentContextManager):
 
     @subsegment_decorator
     async def __call__(self, wrapped, instance, args, kwargs):
-        if is_already_patched(wrapped):
+        if is_already_recorded(wrapped) and not self.force_recording:
             # The wrapped function is already decorated, the subsegment will be created later, just return the result
             return await wrapped(*args, **kwargs)
 

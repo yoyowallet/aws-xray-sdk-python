@@ -5,7 +5,6 @@ import pkgutil
 import re
 import sys
 import wrapt
-from .models.subsegment import is_already_patched
 
 log = logging.getLogger(__name__)
 
@@ -103,9 +102,6 @@ def _patch(module_to_patch):
 
 
 def _patch_func(parent, func_name, func):
-    if is_already_patched(func):
-        return
-
     from aws_xray_sdk.core import xray_recorder
 
     setattr(parent, func_name, xray_recorder.capture()(func))
