@@ -5,6 +5,7 @@ import pkgutil
 import re
 import sys
 import wrapt
+from .utils.compat import PY2
 
 log = logging.getLogger(__name__)
 
@@ -39,8 +40,13 @@ def patch_all(double_patch=False):
         patch(NO_DOUBLE_PATCH, raise_errors=False)
 
 
-def _is_valid_import(path):
-    return bool(pkgutil.get_loader(path))
+def _is_valid_import(module):
+    if PY2:
+        module = module.replace('.', '/')
+    try:
+        return bool(pkgutil.get_loader(module))
+    except ImportError:
+        return False
 
 
 def patch(modules_to_patch, raise_errors=True, ignore_module_patterns=None):
@@ -59,10 +65,10 @@ def patch(modules_to_patch, raise_errors=True, ignore_module_patterns=None):
         else:
             modules.add(module_to_patch)
 
-    unsupported_modules = modules - set(SUPPORTED_MODULES)
+    unsupported_modules = set(module for module in modules if module not in SUPPORTED_MODULES)
     native_modules = modules - unsupported_modules
 
-    external_modules = set(module for module in unsupported_modules if _is_valid_import(module.replace('.', '/')))
+    external_modules = set(module for module in unsupported_modules if _is_valid_import(module))
     unsupported_modules = unsupported_modules - external_modules
 
     if unsupported_modules:
