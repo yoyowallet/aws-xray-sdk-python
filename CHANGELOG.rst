@@ -5,6 +5,7 @@ CHANGELOG
 unreleased
 ==========
 * feature: Stream dbapi2 SQL queries and add flag to toggle their streaming
+* feature: Recursively patch any given module functions with capture
 
 2.2.0
 =====
